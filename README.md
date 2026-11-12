@@ -19,7 +19,7 @@ Built for long-running jobs: local AI coding agents, big downloads, builds, rend
 ## Install
 
 ```zsh
-curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/brooklyn/main/install.sh | zsh
+curl -fsSL https://raw.githubusercontent.com/staSios2k/mac-lid-closed-no-slee--till-brooklyn-/main/install.sh | zsh
 ```
 
 This copies one file to `~/.local/bin/brooklyn` and adds that folder to your PATH. It doesn't need `sudo` to install. Prefer to read before you run? [The installer](install.sh) and [the script](brooklyn) are short.
@@ -28,7 +28,7 @@ This copies one file to `~/.local/bin/brooklyn` and adds that folder to your PAT
 <summary>Manual install</summary>
 
 ```zsh
-git clone https://github.com/YOUR_GITHUB_USERNAME/brooklyn.git
+git clone https://github.com/staSios2k/mac-lid-closed-no-sleep--till-brooklyn-.git
 cd brooklyn
 ./install.sh
 ```
@@ -70,7 +70,7 @@ What `sudo` is used for, and nothing else:
 ## Uninstall
 
 ```zsh
-curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/brooklyn/main/install.sh | zsh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/staSios2k/mac-lid-closed-no-sleep--till-brooklyn-/main/install.sh | zsh -s -- --uninstall
 ```
 
 ## Requirements
