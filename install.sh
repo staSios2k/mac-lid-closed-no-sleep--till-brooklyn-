@@ -1,13 +1,13 @@
 #!/bin/zsh
 # brooklyn installer
-#   install:    curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/brooklyn/main/install.sh | zsh
-#   uninstall:  curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/brooklyn/main/install.sh | zsh -s -- --uninstall
+#   install:    curl -fsSL https://raw.githubusercontent.com/staSios2k/mac-lid-closed-no-sleep--till-brooklyn-/main/install.sh | zsh
+#   uninstall:  curl -fsSL https://raw.githubusercontent.com/staSios2k/mac-lid-closed-no-sleep--till-brooklyn-/main/install.sh | zsh -s -- --uninstall
 #
 # Installs to ~/.local/bin. Never needs sudo to install.
 
 set -e
 
-REPO_RAW="https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/brooklyn/main"
+REPO_RAW="https://raw.githubusercontent.com/staSios2k/mac-lid-closed-no-sleep--till-brooklyn-/main"
 BIN_DIR="$HOME/.local/bin"
 TARGET="$BIN_DIR/brooklyn"
 ZSHRC="$HOME/.zshrc"
