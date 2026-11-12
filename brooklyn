@@ -1,0 +1,197 @@
+#!/bin/zsh
+# brooklyn: keep a MacBook awake with the lid closed for N minutes,
+# with a live countdown in the Terminal window that started it.
+#
+#   brooklyn <minutes>   start; shows a live countdown in this window
+#                        q or Ctrl+C stops early; closing the window also stops it
+#   brooklyn             (from another window) show time remaining
+#   brooklyn arrived     (from another window) stop now / panic reset
+#
+# Env: BROOKLYN_MIN_BATTERY (default 20). On battery power the timer stops
+#      when charge drops to this percentage. Set to 0 to disable.
+
+zmodload zsh/datetime   # $EPOCHSECONDS, $EPOCHREALTIME
+
+readonly STATE=/tmp/brooklyn_timer.state
+readonly SELF=${0:A}
+readonly PMSET=/usr/bin/pmset
+readonly SOUND=/System/Library/Sounds/Glass.aiff
+readonly MAX_MINUTES=1440
+readonly VERSION=1.0.0
+MIN_BATTERY=${BROOKLYN_MIN_BATTERY:-20}
+
+die() { print -u2 -- "brooklyn: $*"; exit 1 }
+
+# 2h13m05s, or 13m05s under an hour
+fmt() {
+  local s=$1
+  (( s < 0 )) && s=0
+  local h=$(( s / 3600 )) m=$(( s % 3600 / 60 )) sec=$(( s % 60 ))
+  if (( h > 0 )); then printf '%dh%02dm%02ds' $h $m $sec
+  else printf '%dm%02ds' $m $sec
+  fi
+}
+
+usage() {
+  print "brooklyn $VERSION: keep your MacBook awake with the lid closed"
+  print ""
+  print "  brooklyn <minutes>   start a live countdown (1-$MAX_MINUTES); q or Ctrl+C stops"
+  print "  brooklyn             show time remaining (from another window)"
+  print "  brooklyn arrived     stop now and restore normal sleep"
+  print "  brooklyn --version   print version"
+}
+
+read_state() {
+  [[ -r $STATE ]] || return 1
+  local line
+  read -r line < $STATE || return 1
+  PID=${line%% *}
+  END=${line##* }
+  [[ $PID == <-> && $END == <-> ]]
+}
+
+worker_alive() {
+  [[ -n ${PID:-} ]] || return 1
+  ps -p $PID -o command= 2>/dev/null | grep -q 'brooklyn __run'
+}
+
+sleep_disabled() { [[ $($PMSET -g 2>/dev/null | awk '/SleepDisabled/ {print $2}') == 1 ]] }
+on_battery()     { [[ $($PMSET -g batt 2>/dev/null) == *"'Battery Power'"* ]] }
+battery_pct()    { $PMSET -g batt 2>/dev/null | grep -oE '[0-9]+%' | head -1 | tr -d '%' }
+parent_pid()     { ps -o ppid= -p $$ 2>/dev/null | tr -d ' ' }
+
+battery_low() {
+  (( MIN_BATTERY > 0 )) || return 1
+  on_battery || return 1
+  local pct=$(battery_pct)
+  [[ $pct == <-> ]] && (( pct <= MIN_BATTERY ))
+}
+
+play_glass() {
+  [[ -r $SOUND ]] || return 0
+  if [[ -n ${SUDO_USER:-} ]]; then
+    sudo -u "$SUDO_USER" /usr/bin/afplay $SOUND 2>/dev/null || /usr/bin/afplay $SOUND 2>/dev/null
+  else
+    /usr/bin/afplay $SOUND 2>/dev/null
+  fi
+}
+
+# ---------- the countdown (runs as root, in the foreground) ----------
+
+RESTORED=0
+restore() {
+  (( RESTORED )) && return 0
+  RESTORED=1
+  $PMSET -a disablesleep 0
+  rm -f $STATE
+  printf '\e[?25h' 2>/dev/null        # show cursor again
+}
+
+run() {
+  local mins=$1
+  (( EUID == 0 )) || die "countdown must run as root"
+  [[ $mins == <-> ]] || die "invalid minutes"
+
+  # Closing the window sends HUP; Ctrl+C sends INT. Both restore sleep.
+  trap 'restore; exit 129' HUP
+  trap 'restore; printf "\r\e[K"; print "brooklyn: stopped early. Normal sleep restored."; exit 130' INT TERM QUIT
+
+  local end=$(( EPOCHSECONDS + mins * 60 ))
+  print -r -- "$$ $end" > $STATE
+  chmod 644 $STATE
+  $PMSET -a disablesleep 1 || die "could not disable sleep"
+
+  local ppid0=$(parent_pid) tick=0 batt=$(battery_pct) key left t0 reason=done
+  local have_tty=0
+  [[ -t 0 ]] && have_tty=1
+
+  print "brooklyn: lid-close sleep disabled for $(fmt $(( mins * 60 )))."
+  print "Press q or Ctrl+C to stop early. Closing this window also stops it."
+  on_battery && print "On battery: keep the Mac on an open surface, never in a bag."
+  printf '\e[?25l'                     # hide cursor while counting
+
+  while true; do
+    left=$(( end - EPOCHSECONDS ))
+    (( left <= 0 )) && break
+
+    if (( tick % 15 == 0 )); then
+      batt=$(battery_pct)
+      if battery_low; then reason=battery; break; fi
+      # Safety net: if our parent vanished (window gone), restore and quit.
+      [[ $(parent_pid) == $ppid0 ]] || { restore; exit 129; }
+    fi
+
+    printf '\r\e[K  %s remaining   battery %s%%   (q = stop)' "$(fmt $left)" "${batt:-?}"
+
+    t0=$EPOCHREALTIME
+    if (( have_tty )) && read -s -t 1 -k 1 key 2>/dev/null; then
+      [[ $key == [qQ] ]] && { reason=quit; break; }
+    elif (( EPOCHREALTIME - t0 < 0.5 )); then
+      sleep 1                          # no usable keyboard input: don't spin
+    fi
+    (( tick++ ))
+  done
+
+  restore
+  printf '\r\e[K'
+  case $reason in
+    done)    print "brooklyn: time's up. Normal sleep restored."; play_glass ;;
+    battery) print "brooklyn: battery at ${batt}%, stopped early. Normal sleep restored."; play_glass ;;
+    quit)    print "brooklyn: stopped early. Normal sleep restored." ;;
+  esac
+  exit 0
+}
+
+# ---------- user commands ----------
+
+stop_worker() {
+  local PID END i
+  if read_state && worker_alive; then
+    print "brooklyn: stopping the timer running in another window."
+    sudo kill -TERM $PID 2>/dev/null
+    for i in {1..50}; do worker_alive || break; sleep 0.1; done
+    worker_alive && sudo kill -KILL $PID 2>/dev/null
+  fi
+}
+
+start() {
+  local mins=$1
+  [[ $mins == <-> ]] && (( mins >= 1 )) || die "minutes must be a positive whole number (got '$mins')"
+  (( mins <= MAX_MINUTES )) || die "maximum is $MAX_MINUTES minutes"
+  sudo -v || die "sudo authentication failed"
+  stop_worker
+  exec sudo "$SELF" __run $mins $MIN_BATTERY
+}
+
+status() {
+  local PID END
+  if read_state; then
+    if worker_alive; then
+      print "Time remaining: $(fmt $(( END - EPOCHSECONDS )))"
+      return
+    fi
+    print "brooklyn: stale timer state found (timer is not running)."
+  fi
+  if sleep_disabled; then
+    print "brooklyn: no timer running, but sleep is still DISABLED. Run 'brooklyn arrived'."
+  else
+    print "brooklyn: no timer running. Normal sleep is active."
+  fi
+}
+
+arrived() {
+  sudo -v || die "sudo authentication failed"
+  stop_worker
+  sudo $PMSET -a disablesleep 0
+  sudo rm -f $STATE
+  print "brooklyn: arrived. Normal sleep restored."
+}
+
+case ${1:-} in
+  "")             status ;;
+  arrived)        arrived ;;
+  __run)          MIN_BATTERY=${3:-20}; trap restore EXIT; run "${2:-}" ;;
+  -h|--help|help) usage ;;
+  -v|--version)   print "brooklyn $VERSION" ;;
+  *)              start "$1" ;;
+esac
