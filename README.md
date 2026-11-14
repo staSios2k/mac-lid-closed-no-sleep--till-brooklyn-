@@ -19,7 +19,7 @@ Built for long-running jobs: local AI coding agents, big downloads, builds, rend
 ## Install
 
 ```zsh
-curl -fsSL https://raw.githubusercontent.com/staSios2k/mac-lid-closed-no-slee--till-brooklyn-/main/install.sh | zsh
+curl -fsSL https://raw.githubusercontent.com/staSios2k/mac-lid-closed-no-sleep--till-brooklyn-/main/install.sh | zsh
 ```
 
 This copies one file to `~/.local/bin/brooklyn` and adds that folder to your PATH. It doesn't need `sudo` to install. Prefer to read before you run? [The installer](install.sh) and [the script](brooklyn) are short.
